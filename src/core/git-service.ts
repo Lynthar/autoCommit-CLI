@@ -126,17 +126,32 @@ export class GitService {
       // Stage the file
       await this.git.add(filePath);
 
-      // Format date for Git (ISO 8601 format)
+      // Format date for Git commit --date option
+      // Git accepts ISO 8601 format
       const dateStr = date.toISOString();
 
-      // Create commit with custom date
-      // Use environment variables for author and committer dates
-      const result = await this.git
-        .env('GIT_AUTHOR_DATE', dateStr)
-        .env('GIT_COMMITTER_DATE', dateStr)
-        .commit(message);
+      // Use raw git command with --date flag for reliable date setting
+      // This sets the author date; we also need to set committer date via env
+      const gitWithEnv = simpleGit({
+        baseDir: this.repoPath,
+        binary: 'git',
+        maxConcurrentProcesses: 1,
+        trimmed: true,
+      }).env({
+        ...process.env,
+        GIT_COMMITTER_DATE: dateStr,
+      });
 
-      return result.commit;
+      // Use commit with --date option for author date
+      await gitWithEnv.raw([
+        'commit',
+        '-m', message,
+        '--date', dateStr,
+      ]);
+
+      // Get the commit hash
+      const hash = await this.git.revparse(['HEAD']);
+      return hash.substring(0, 7);
     } catch (error) {
       throw new AutoCommitError(
         `Failed to create commit: ${error}`,
